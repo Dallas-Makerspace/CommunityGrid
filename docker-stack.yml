@@ -17,6 +17,10 @@ services:
     labels:
       - "traefik.enable=false"
       - "traefik.acme.onhostrule=true"
+      - "traefik.acme.entryPoint=https"
+      - "traefik.entryPoints.http=80"
+      - "traefik.entryPoints.https.address=443"
+      - "traefik.entryPoints.https.tls"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /dev/null:/traefik.toml
@@ -42,15 +46,6 @@ services:
         - "traefik.acme.domains=communitygrid.dallasmakerspace.org"
         - "traefik.frontend.rule=HostRegexp:{catchall:.*}"
         - "traefik.frontend.priority=1"
-
-###
-## Add services with labels, (many hosts with Host: or special rules with ';', multiport is traefik.<service_name>.port:
-       # - "traefik.frontend.rule=Host:communitygrid.dms.local,communitygrid.dallasmakerspace.org"
-       # - traefik.frontend.priority=0
-       # - "traefik.enable=true"
-       # - "traefik.port=${PORT}"
-       # - "traefik.docker.network=CommunityGrid_gateway"
-       # - "traefik.acme.domains=service.communitygrid.dallasmakerspace.org"
 
 networks:
   gateway:
