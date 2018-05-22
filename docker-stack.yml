@@ -1,0 +1,56 @@
+version: "3.3"
+services:
+  traefik:
+    image: traefik
+    command: --web \
+      --docker \
+      --docker.swarmmode \
+      --docker.domain=traefik \
+      --docker.watch \
+      --logLevel=DEBUG
+    networks:
+      - gateway
+    ports:
+      - "80:80"
+      - "8880:8080"
+      - "443:443"
+    labels:
+      - "traefik.enable=false"
+      - "traefik.acme.onhostrule=true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev/null:/traefik.toml
+    deploy:
+      placement:
+        constraints: [node.role==manager]
+
+  portainer:
+    image: portainer/portainer
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/opt/portainer:/data"
+    networks:
+      - gateway
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.port=9000"
+        - "traefik.docker.network=CommunityGrid_gateway"
+        - "traefik.acme.email='infrastructure@dallasmakerspace.org'"
+        - "traefik.acme.domains=communitygrid.dallasmakerspace.org"
+        - "traefik.frontend.rule=HostRegexp:{catchall:.*}"
+        - "traefik.frontend.priority=1"
+
+###
+## Add services with labels, (many hosts with Host: or special rules with ';', multiport is traefik.<service_name>.port:
+       # - "traefik.frontend.rule=Host:communitygrid.dms.local,communitygrid.dallasmakerspace.org"
+       # - traefik.frontend.priority=0
+       # - "traefik.enable=true"
+       # - "traefik.port=${PORT}"
+       # - "traefik.docker.network=CommunityGrid_gateway"
+       # - "traefik.acme.domains=service.communitygrid.dallasmakerspace.org"
+
+networks:
+  gateway:
