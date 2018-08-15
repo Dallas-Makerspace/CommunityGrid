@@ -1,6 +1,6 @@
 # CommunityGrid
-VCC Community Grid at Dallas Makerspace
 
+VCC Community Grid at Dallas Makerspace
 
 
 ### Service Deployment
@@ -8,9 +8,13 @@ VCC Community Grid at Dallas Makerspace
 ## multiport is traefik.<service_name>.port:
 
        # - "traefik.frontend.rule=Host:communitygrid.dms.local,communitygrid.dallasmakerspace.org"
-       # - "traefik.frontend.priority=0
+       # - "traefik.frontend.priority=10
        # - "traefik.enable=true"
        # - "traefik.port=${PORT}"
-       # - "traefik.docker.network=CommunityGrid_gateway"
+       # - "traefik.docker.network=public"
        # - "traefik.acme.domains=service.communitygrid.dallasmakerspace.org"
-       # - "com.centurylinklabs.watchtower.enable"
+       # - "com.centurylinklabs.watchtower.enable='true'"
+       # - "orbiter=enabled"
+       # - "orbiter.up=3"
+       # - "orbiter.down=1"
+
