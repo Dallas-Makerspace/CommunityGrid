@@ -1,75 +1,152 @@
-version: "3.3"
-services:
-  traefik:
-    image: traefik
-    command: --web \
-      --docker \
-      --docker.swarmmode \
-      --docker.domain=traefik \
-      --docker.watch \
-      --logLevel=DEBUG
-    networks:
-      - gateway
-    ports:
-      - "80:80"
-      - "8880:8080"
-      - "443:443"
-    labels:
-      - "traefik.enable=false"
-      - "traefik.acme.onhostrule=true"
-      - "traefik.acme.entryPoint=https"
-      - "traefik.entryPoints.http=80"
-      - "traefik.entryPoints.https.address=443"
-      - "traefik.entryPoints.https.tls"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /dev/null:/traefik.toml
-    deploy:
-      placement:
-        constraints: [node.role==manager]
+---
+version: "3.6"
 
-  portainer:
-    image: portainer/portainer
+services:
+
+  shepherd:
+    image: 'mazzolino/shepherd'
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "/opt/portainer:/data"
-    networks:
-      - gateway
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # /root/.docker/config.json:/root/.docker/config.json:ro
+    environment:
+      SLEEP_TIME: "5m"
+      BLACKLIST_SERVICES: "shepherd autoscale traefik agent"
+      WITH_REGISTRY_AUTH: "true"
+      DOCKER_HOST: "unix:///var/run/docker.sock"
     deploy:
+      restart_policy:
+        condition: on-failure
+      mode: global
       placement:
         constraints: [node.role == manager]
       labels:
-        - "traefik.enable=true"
-        - "traefik.port=9000"
-        - "traefik.docker.network=CommunityGrid_gateway"
-        - "traefik.acme.email='infrastructure@dallasmakerspace.org'"
-        - "traefik.acme.domains=communitygrid.dallasmakerspace.org"
-        - "traefik.frontend.rule=HostRegexp:{catchall:.*}"
-        - "traefik.frontend.priority=1"
-     
-  proxy:
-    image: a5huynh/oauth2_proxy
-    env_file: /var/data/config/wekan/wekan.env
+        traefik.enable: "false"
+        orbiter: "false"
+
+  autoscale:
+    image: gianarb/orbiter:latest
+    #command: ["daemon", "--debug"]
+    environment:
+      DOCKER_HOST: "unix:///var/run/docker.sock"
+    ports:
+      - 8000
     networks:
-      - traefik
-      - internal
+      - public
     volumes:
-      - /var/data/oauth_proxy/authenticated-emails.txt:/authenticated-emails.txt
+      - /var/run/docker.sock:/var/run/docker.sock
     deploy:
+      restart_policy:
+        condition: on-failure
+      mode: replicated
+      replicas: 1
       labels:
-        - traefik.frontend.rule=Host:wekan.example.com
-        - traefik.docker.network=traefik
-        - traefik.port=4180
-    command: |
-      -cookie-secure=false
-      -upstream=http://wekan:80
-      -redirect-url=https://wekan.example.com
-      -http-address=http://0.0.0.0:4180
-      -email-domain=dallasmakerspace.org
-      -provider=github
-      -authenticated-emails-file=/authenticated-emails.txt
+        com.centurylinklabs.watchtower.enable: "true"
+        orbiter: "false"
+        traefik.enable: "true"
+        traefik.port: "8000"
+        traefik.docker.network: "public"
+        traefik.frontend.rule: "Host:scaler.${DOMAIN}"
+        traefik.frontend.priority: "10"
+        traefik.frontend.entryPoints: "http, https"
+      placement:
+        constraints: [node.role == manager]
 
+  agent:
+    image: portainer/agent:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - target: 9001
+        published: 9001
+        protocol: tcp
+        mode: host
+    environment:
+      AGENT_CLUSTER_ADDR: tasks.agent
+    networks:
+      - internal
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        com.centurylinklabs.watchtower.enable: "true"
+        orbiter: "false"
+        traefik.enable: "false"
 
-  
+  traefik:
+    image: traefik:latest
+    command:
+      - "--logLevel=DEBUG"
+      - "--accesslog"
+      - "--api=true"
+      - "--api.entryPoint=traefik"
+      - "--api.dashboard=true"
+      - "--entryPoints=Name:http Address::80 Redirect.EntryPoint:https"
+      #- "--entryPoints=Name:http Address::80"
+      - "--entryPoints=Name:https Address::443 TLS"
+      - "--defaultentrypoints=http,https"
+      - "--docker"
+      - "--docker.exposedbydefault=true"
+      - "--docker.swarmmode"
+      - "--docker.domain=${DOMAIN}"
+      - "--docker.watch=true"
+      - "--acme"
+      - "--acme.acmelogging=true"
+      - "--acme.domains=*.${DOMAIN}"
+      - "--acme.email=dspencer@computekindustries.com"
+      - "--acme.storage=/acme.json"
+      - "--acme.entryPoint=https"
+      - "--acme.onHostRule=true"
+      - "--acme.onDemand=false"
+      - "--acme.httpChallenge.entryPoint=http"
+      - "--acme.dnschallenge=true"
+      - "--acme.dnschallenge.provider=cloudflare"
+      - "--acme.tlsconfig=true"
+    environment:
+      CF_EMAIL: "dspencer@computekindustries.com"
+      CF_API_KEY: "865a09eaf3a2819c36755fffa91b4b0129b63"
+    deploy:
+      placement:
+        constraints: [node.role==manager]
+      restart_policy:
+        condition: on-failure
+      labels:
+        traefik.enabled: "true"
+        traefik.port: "8080"
+        traefik.docker.network: "public"
+        traefik.frontend.rule: "Host:traefik.${DOMAIN}"
+        traefik.frontend.priority: "10"
+        traefik.frontend.entryPoints: "http, https"
+        traefik.frontend.headers.STSSeconds: "315360000"
+        traefik.frontend.headers.STSIncludeSubdomains: "true"
+        traefik.frontend.headers.STSPreload: "true"
+        traefik.frontend.headers.SSLRedirect: "false"
+        traefik.frontend.headers.SSLHost: "traefik.${DOMAIN}"
+        traefik.frontend.headers.frameDeny: "true"
+        traefik.frontend.headers.browseXSSFilter:  "true"
+        traefik.frontend.passHostHeader: "true"
+        orbiter: "false"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev/null:/traefik.toml
+    networks:
+      - public
+
 networks:
-  gateway:
+
+  public:
+    external:
+      name: public
+
+  internal:
+    external:
+      name: internal
+
+...
+# vim: set sts=2 sw=2 ts=2 et ai:
