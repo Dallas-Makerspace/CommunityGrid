@@ -1,0 +1,134 @@
+---
+version: "3.6"
+
+services:
+
+  influxdb:
+    ports:
+      - "8086/tcp"
+    networks:
+      - internal
+    image: influxdb:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role==manager]
+      restart_policy:
+        condition: on-failure
+      labels:
+        traefik.enabled: "false"
+        com.centurylinklabs.watchtower.enable: "true"
+        orbiter: "true"
+        orbiter.up: "3"
+        orbiter.down: "1"
+
+  telegraf:
+    image: telegraf:latest
+    configs:
+      - source: telegraf.conf
+        target: /etc/telegraf/telegraf.conf
+    hostname: "{{.Node.ID}}"
+    ports:
+      - "6514:6514"
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+      labels:
+        traefik.enabled: "false"
+        com.centurylinklabs.watchtower.enable: "true"
+        orbiter: "false"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/hostfs:ro
+    environment:
+      HOST_MOUNT_PREFIX: "/hostfs"
+      HOST_MOUNT_PROC: "/hostfs/proc"
+      DOCKER_HOST: "unix:///var/run/docker.sock"
+    networks:
+      - internal
+    depends_on:
+      - influxdb
+
+  kapacitor:
+    image: kapacitor:latest
+    hostname: "{{.Node.ID}}"
+    configs:
+      - source: kapacitor.conf
+        target: /etc/kapacitor/kapacitor.conf
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role==manager]
+      restart_policy:
+        condition: on-failure
+      labels:
+        traefik.enabled: "false"
+        com.centurylinklabs.watchtower.enable: "true"
+        orbiter: "false"
+    volumes:
+      - kapacitor-data:/var/lib/kapacitor
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "9092"
+    networks:
+      - internal
+    depends_on:
+      - influxdb
+
+  chronograf:
+    image: chronograf:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role==manager]
+      restart_policy:
+        condition: on-failure
+      labels:
+        com.centurylinklabs.watchtower.enable: "true"
+        traefik.port: "8888"
+        traefik.docker.network: "public"
+        traefik.frontend.rule: "Host:monitoring.${DOMAIN}"
+        traefik.frontend.priority: "10"
+        traefik.frontend.entryPoints: "http, https"
+        traefik.enabled: "true"
+        orbiter: "true"
+        orbiter.up: "3"
+        orbiter.down: "1"
+    ports:
+      - '8888/tcp'
+    volumes:
+      - chronograf-data:/var/lib/chronograf
+    networks:
+      - internal
+      - public
+    depends_on:
+      - influxdb
+      - kapacitor
+    command: --influxdb-url=http://influxdb:8086 --kapacitor-url=http://kapacitor:9092
+
+configs:
+  telegraf.conf:
+    file: ./config/telegraf.conf
+
+  kapacitor.conf:
+    file: ./config/kapacitor.conf
+
+volumes:
+
+  chronograf-data: {}
+  kapacitor-data: {}
+  influxdb-data: {}
+
+networks:
+
+  public:
+    external:
+      name: public
+
+  internal:
+    external:
+      name: internal
+
+...
+# vim: set sts=2 sw=2 ts=2 et ai:
