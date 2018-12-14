@@ -1,0 +1,55 @@
+---
+version: "3.6"
+
+services:
+
+  portainer:
+    image: 'portainer/portainer:latest'
+    ports:
+      - '9000/tcp'
+    networks:
+      - public
+      - internal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    depends_on:
+      - agent
+      - autoscale
+      - traefik
+    command: -H "tcp://tasks.agent:9001" --tlsskipverify --no-auth
+    #command: -H "unix:///var/run/docker.sock" --no-auth
+    deploy:
+      restart_policy:
+        condition: on-failure
+      mode: global
+      labels:
+        traefik.frontend.rule: "HostRegexp:{catchall:.*}"
+        traefik.frontend.priority: "1"
+        traefik.frontend.entryPoints: "http, https"
+        traefik.backend: "dashboard"
+        traefik.docker.network: "public"
+        traefik.port: "9000"
+        traefik.enable: "true"
+        traefik.default.protocol: "http"
+        orbiter: "true"
+        orbiter.up: "3"
+        orbiter.down: "1"
+
+volumes:
+
+  portainer_data: {}
+
+networks:
+
+  public:
+    external:
+      name: public
+
+  internal:
+    external:
+      name: internal
+
+...
+# vim: set sts=2 sw=2 ts=2 et ai:
+
