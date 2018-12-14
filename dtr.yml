@@ -1,0 +1,68 @@
+---
+version: "3.6"
+
+services:
+
+  docker-registry:
+    image: registry:2
+    networks:
+      public:
+        aliases:
+          - "registry"
+    ports:
+      - "5000/tcp"
+    volumes:
+      - dtr-data:/var/lib/registry
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role==manager]
+      restart_policy:
+        condition: on-failure
+      labels:
+        traefik.port: "5000"
+        traefik.frontend.priority: "10"
+        traefik.frontend.entryPoints: "http, https"
+        traefik.frontend.rule: "Host:registry.${DOMAIN}"
+        traefik.docker.network: "public"
+        traefik.enabled: "true"
+        traefik.frontend.headers.customresponseheaders.Access-Control-Allow-Origin: "*"
+        traefik.frontend.headers.customresponseheaders.Access-Control-Allow-Credentials: "true"
+        traefik.frontend.headers.customresponseheaders.Access-Control-Allow-Credentials: "true"
+        traefik.frontend.headers.customresponseheaders.X-XSS-Protection: "1; mode=block"
+        traefik.frontend.auth.basic: "dtr:$$apr1$$9Cv/OMGj$$ZomWQzuQbL.3TRCS81A1g/" # dtr:password
+        orbiter: "false"
+        com.centurylinklabs.watchtower.enable: "true"
+
+  docker-registry-ui:
+    depends_on:
+      - docker-registry
+    image: joxit/docker-registry-ui:latest
+    environment:
+      URL: "http://registry/"
+      DELETE_IMAGES: "true"
+    networks:
+      - public
+    ports:
+      - "80/tcp"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      labels:
+        traefik.port: "80"
+        traefik.frontend.priority: "10"
+        traefik.frontend.entryPoints: "http, https"
+        traefik.frontend.rule: "Host:dtr.${DOMAIN}"
+        traefik.docker.network: "public"
+        traefik.enabled: "true"
+        traefik.frontend.auth.basic: "${DTR_AUTH}" # dtr:password
+        orbiter: "false"
+        com.centurylinklabs.watchtower.enable: "true"
+
+volumes:
+
+  dtr-data: {}
+
+...
+# vim: set sts=2 sw=2 ts=2 et ai:
