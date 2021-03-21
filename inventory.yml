@@ -1,0 +1,165 @@
+---
+version: "3.7"
+
+## DSL Config
+x-influxlog: &syslog
+  logging:
+    driver: syslog
+    options:
+      #syslog-address: "udp://{{.Node.Hostname}}:6154"
+      #syslog-address: "udp://{{.Swarm.NodeAddr}}:6154"
+      syslog-address: "udp://127.0.0.1:6154"
+      syslog-format: rfc5424micro
+      tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+x-replicas: &replicated
+  replicas: 1
+
+x-global: &global
+  mode: global
+
+x-worker: &worker
+  placement:
+    constraints: [node.role == worker]
+
+x-manager: &manager
+  placement:
+    constraints: [node.role == manager]
+
+x-restart: &on-failure
+  restart_policy:
+    condition: on-failure
+    max_attempts: 3
+    delay: 5s
+
+  rollback_config:
+    parallelism: 2
+    delay: 10s
+    monitor: 10s
+    order: start-first
+    failure_action: continue
+
+  update_config:
+    parallelism: 2
+    delay: 10s
+    monitor: 10s
+    order: start-first
+    failure_action: rollback
+
+x-stop-grace: &stopperiod
+  stop_grace_period: 30s
+
+x-default-healthcheck: &heathcheck-pass
+  test: ["CMD", "exit 0"]
+  interval: 25s
+  timeout: 5s
+  retries: 3
+
+x-traefik-off: &traefik-off
+  traefik.enabled: "false"
+
+x-traefik-on: &traefik-on
+  traefik.enabled: "true"
+  traefik.frontend.errors.network.backend: "error"                                                                                                                                                                     
+  traefik.frontend.errors.network.query: "/"                                                                                                                                                                             
+  traefik.frontend.errors.network.status: "404,500-511"
+  traefik.frontned.entrypoints: 'http,https,ws,wss'
+  traefik.frontend.priority: "5"
+  traefik.port: "80"
+
+x-default-route: &default-route
+  <<: *traefik-on
+  traefik.frontend.rule: "HostRegexp:{catchall:.*}"
+  traefik.frontend.priority: "1"
+#<<: *traefik-default-frontend
+
+x-vhost-route: &vhost-route
+  <<: *traefik-on
+  traefik.frontend.priority: "10"
+
+
+x-orbiter-disable: &orbiter-off
+  orbiter: "false"
+  <<: *traefik-off
+
+x-orbiter-enable: &orbiter-on
+  orbiter: "true"
+  orbiter.up: "3"
+  orbiter.down: "1"
+  <<: *traefik-on
+
+configs: {}
+
+networks:
+
+  internal:
+    external: true
+    name: internal
+
+  default:
+    external: true
+    name: ${DEFAULT_NETWORK}
+
+
+volumes:
+  postgresql: {}
+  addons: {}
+  etc: {}
+
+services:
+  db:
+    image: postgres:11
+    # container_name: postgres11
+    environment:
+      - POSTGRES_PASSWORD=odoo
+      - POSTGRES_USER=odoo
+      - POSTGRES_DB=postgres
+    networks:
+      - internal
+    deploy:
+      <<: *replicated
+      <<: *on-failure
+      placement:
+        constraints:
+          - node.role == worker
+          - node.labels.net.matrix.role == database
+      labels:
+        <<: *global
+        <<: *orbiter-off
+    volumes:
+        - postgresql:/var/lib/postgresql/data
+
+  inventory:
+    deploy:
+      <<: *replicated
+      <<: *on-failure
+      placement:
+        constraints:
+          - node.role == worker
+          - node.labels.net.matrix.role == application services
+      labels:
+        <<: *vhost-route
+        <<: *orbiter-on
+        <<: *global
+        traefik.port: "8069"
+        traefik.frontend.rule: "Host:inventory.${DOMAINNAME}"
+    networks:
+      - internal
+      - default
+    image: odoo:13
+    depends_on:
+      - db
+    ports:
+      - "8069/tcp"
+    tty: true
+    stdin_open: true
+    command: -- --dev=reload
+    environment:
+      - HOST=db
+      - USER=odoo
+      - PASSWORD=odoo
+    volumes:
+      - addons:/mnt/extra-addons
+      - etc:/etc/odoo
+...
+# vim: set sts=2 sw=2 ts=2 et ai:
